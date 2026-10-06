@@ -69,7 +69,20 @@ The same metrics drive the Prometheus alert rules (`config/prometheus/alerts.yml
 
 ## Stack
 
-Python 3.11 · aiogram 3 · OpenAI / Gemini · SQLAlchemy 2 + Alembic · PostgreSQL · Redis · Pillow · Docker Compose · nginx + certbot · Prometheus · Alertmanager · Grafana · pytest
+| Layer | Technologies |
+|---|---|
+| **Language & runtime** | Python 3.11, asyncio; CPU-bound image work in a `ProcessPoolExecutor` |
+| **Telegram** | aiogram 3 (bot + separate ops bot), aiogram-media-group (photo albums), Telegram Mini App, Telegram Stars payments |
+| **LLM** | Google Gemini via `google-genai` (production: Gemini 3.5 Flash-Lite), OpenAI Responses API via `openai` (alternative provider); strict JSON schemas with Pydantic |
+| **Data** | PostgreSQL 16, SQLAlchemy 2, Alembic migrations; Redis 7.2 for sessions, navigation state, per-user LLM spend limits, idempotency keys |
+| **Images & barcodes** | Pillow (in-memory resize), zxing-cpp (barcode decoding); Open Food Facts, FatSecret, Dietagram, BarcodeLookup APIs over httpx |
+| **Payments** | Robokassa (cards, signed webhook on aiohttp), Telegram Stars |
+| **Web** | aiohttp server for the payment webhook, Mini App JSON API and `/metrics`; Mini App frontend in React 18 + TypeScript + Vite with hand-drawn SVG charts (private) |
+| **i18n** | Project Fluent (`.ftl`) via aiogram-i18n, Russian and English |
+| **Infrastructure** | Docker, Docker Compose, nginx with Let's Encrypt (certbot), single VPS |
+| **Observability** | Prometheus, Alertmanager, node_exporter, Grafana (dashboards provisioned as code), Dozzle for container logs, logfmt structured logging, Telegram alerting |
+| **Quality** | pytest + pytest-asyncio, fakeredis and in-memory SQLite for tests; ruff, black; Fluent key consistency check |
+| **Configuration** | environs (`.env`), YAML configs per LLM provider |
 
 ## Layout
 
