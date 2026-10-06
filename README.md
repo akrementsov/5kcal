@@ -5,6 +5,23 @@
 > **This is a showcase snapshot, not a runnable copy of the product.**
 > The production LLM prompts, the UI layer (screens, keyboards, handlers, localized texts) and the Mini App frontend are kept in a private repository. Everything else — the architecture, the LLM integration, data model, billing, observability and tests — is here as it runs in production.
 
+## Screenshots
+
+<table>
+  <tr>
+    <td align="center" width="25%"><img src="docs/screenshots/01-meal-card.png" alt="Meal card"></td>
+    <td align="center" width="25%"><img src="docs/screenshots/02-day-history.png" alt="Day history"></td>
+    <td align="center" width="25%"><img src="docs/screenshots/03-week-history.png" alt="Week history"></td>
+    <td align="center" width="25%"><img src="docs/screenshots/04-onboarding-photo-tips.png" alt="Onboarding photo tips"></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>Meal card: calorie and macro ranges, portions, edit / repeat / re-date</sub></td>
+    <td align="center"><sub>Day view with per-meal portion controls</sub></td>
+    <td align="center"><sub>Week overview with drill-down into days</sub></td>
+    <td align="center"><sub>Onboarding: how to photograph a dish</sub></td>
+  </tr>
+</table>
+
 ## Highlights
 
 - **Two-call vision pipeline.** Call 1 identifies the dish and decomposes it into components with per-100 g nutrition; Call 2 estimates the weight of each component volumetrically. Both calls use strict JSON schemas (`src/core/llm/two_call_models.py`) with typed `ok / error / clarification` outcomes, so the model can ask the user a clarifying question instead of guessing.
