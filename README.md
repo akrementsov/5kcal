@@ -17,6 +17,21 @@
 - **Observability.** Prometheus metrics for business events and every LLM call (latency, tokens, cost, outcome), Grafana dashboards, Alertmanager rules routed to Telegram — error rates, stuck analyses, token spend spikes, payment signature failures, host resources (`src/core/metrics/`, `config/`).
 - **Product analytics.** Funnel event tracking stored in PostgreSQL (`src/core/tracking/`).
 
+## Ops bot (logbot)
+
+Operations run through a second, private Telegram bot, so production can be watched and managed from a phone. One token (`ALERT_BOT_TOKEN`) and one admin chat serve four roles:
+
+1. **Application alerts.** Every `WARNING`+ record from the app logger goes to the chat as a compact HTML message: level icon, `file:line`, escaped message, the last line of the traceback and the structured `extra` fields. Third-party library warnings are kept out of the chat; `error()`/`warning()` attach the active traceback automatically (`src/core/utils/logger.py`).
+2. **Infrastructure alerts.** Alertmanager delivers Prometheus alerts to the same chat with firing/resolved messages, grouped by alert name. The token is injected into the config template at container start, so it never lands in the repo (`config/alertmanager/alertmanager.tpl.yml`, `docker-compose.yml`).
+3. **Business events.** Sales (card or ⭐ Stars) and the first daily hit of a user's LLM spend limit are posted as service notifications. Sending is fire-and-forget: a failed notification is logged and never breaks the payment flow (`src/core/utils/admin_notify.py`).
+4. **Admin console.** The bot polls its own commands, restricted to admin IDs at the router level, so every new command is protected by default. Destructive actions require inline confirmation. Polling restarts with exponential backoff independently of the main bot. Commands cover:
+   - subscriptions — info, gift days, refund, grant/revoke unlimited;
+   - users — Telegram profile lookup, reset the daily LLM limit, ban/unban;
+   - payments — Robokassa test/prod mode, a 1⭐ self-test with auto-refund, global or per-admin payment kill switch, promo prices;
+   - health — Redis/Postgres status and uptime.
+
+   The admin command handlers belong to the private UI layer.
+
 ## Stack
 
 Python 3.11 · aiogram 3 · OpenAI / Gemini · SQLAlchemy 2 + Alembic · PostgreSQL · Redis · Pillow · Docker Compose · nginx + certbot · Prometheus · Alertmanager · Grafana · pytest
