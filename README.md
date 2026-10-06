@@ -49,6 +49,24 @@ Operations run through a second, private Telegram bot, so production can be watc
 
    The admin command handlers belong to the private UI layer.
 
+## Monitoring (Grafana)
+
+The monitoring stack runs next to the bot in Docker Compose: Prometheus scrapes the bot's `/metrics`, itself and node_exporter every 15 s; Alertmanager routes alerts to the ops bot; Grafana reads Prometheus and PostgreSQL. Datasources and dashboards are provisioned as code (`config/grafana/`), so a fresh deploy comes up with everything in place. All monitoring UIs (Grafana, Prometheus, Alertmanager, Dozzle for container logs) listen on `127.0.0.1` only and are reached through an SSH tunnel.
+
+The main dashboard, **5 kcal** (`config/grafana/dashboards/fivekcal.json`), is split into rows:
+
+| Row | What it shows |
+|---|---|
+| **Overview** | analyses in flight, analysis success rate, LLM errors and retries over the last hour, Telegram update rate, bot uptime |
+| **Update flow** | Telegram updates by type; analyses by outcome — `ok` / `error` / `rejected` (not food, prompt injection) / `clarification` |
+| **Analysis performance** | end-to-end analysis time and photo resize time, p50 / p90 / p99 |
+| **LLM** | latency p50 / p90 / p99, requests by outcome, retry rate, token rate by type (input / output / thinking / cached), tokens per successful analysis, prompt-cache hit rate, 24 h and 7 d token totals, top users by token spend (PostgreSQL) |
+| **Payments & business** | payments and revenue in ₽ and ⭐ with refunds, invalid Robokassa signatures, callbacks by outcome, active subscriptions by type (trial / paid / unlimited), new users, meals logged, DAU |
+| **HTTP API** | requests by route and status, p95 latency per route (payment webhook, Mini App API) |
+| **Server** | host CPU, memory and disk usage |
+
+The same metrics drive the Prometheus alert rules (`config/prometheus/alerts.yml`): bot down or restarting, LLM and analysis error rates, p95 analysis latency, stuck analyses, token usage per analysis and token spend spikes, payment signature and amount mismatches, disk and memory pressure. A second dashboard with product funnels (activation, paywall, monetization, churn) is built on the event tracking in PostgreSQL and kept private.
+
 ## Stack
 
 Python 3.11 · aiogram 3 · OpenAI / Gemini · SQLAlchemy 2 + Alembic · PostgreSQL · Redis · Pillow · Docker Compose · nginx + certbot · Prometheus · Alertmanager · Grafana · pytest
