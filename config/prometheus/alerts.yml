@@ -1,0 +1,203 @@
+groups:
+  - name: fivekcal-bot
+    interval: 30s
+    rules:
+
+      # ── Доступность ──────────────────────────────────────────────────────
+
+      - alert: BotDown
+        expr: up{job="fivekcal-bot"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Бот не отвечает на /metrics уже 2+ минуты"
+          description: "Prometheus не может скрейпить fivekcal-bot:9090. Бот упал или метрики-сервер не запустился."
+
+      - alert: BotRestarted
+        expr: changes(fivekcal_bot_start_timestamp_seconds[10m]) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: "Бот рестартовал в последние 10 минут"
+          description: "fivekcal_bot_start_timestamp_seconds изменился — был рестарт. Проверь, не падает ли в цикле."
+
+      # ── LLM ───────────────────────────────────────────────────────────────
+
+      - alert: LLMHighErrorRate
+        # Доля нечитаемых ответов (api_error + parse_error) за 10 минут > 5%.
+        # api_error — провайдер отдал ошибку; parse_error — ответил 200, но контент
+        # не распарсился (смена схемы/модели, safety-блок с пустым телом). Оба
+        # означают, что пользователь не получит результат, и оба невидимы для
+        # LLMHighRetryRate. Транзиентный parse, выправившийся на ретрае, порог не
+        # пробивает; устойчивая волна (>5% попыток) — реальный сбой.
+        expr: |
+          sum(rate(fivekcal_llm_requests_total{outcome=~"api_error|parse_error"}[10m]))
+          /
+          sum(rate(fivekcal_llm_requests_total[10m])) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "LLM возвращает >5% нечитаемых ответов (api_error/parse_error)"
+          description: "OpenAI/Gemini отдают api_error или неразбираемый контент (parse_error). Проверь ключи, квоты, статус провайдера; для parse_error — не сменилась ли схема ответа/модель, нет ли safety-блоков."
+
+      - alert: LLMHighRetryRate
+        # Retry-rate (rate_limit + connection_error) / total > 20% за 10 минут
+        expr: |
+          sum(rate(fivekcal_llm_requests_total{outcome=~"rate_limit|connection_error"}[10m]))
+          /
+          sum(rate(fivekcal_llm_requests_total[10m])) > 0.2
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "LLM работает нестабильно — >20% запросов уходит в retry"
+          description: "Часто срабатывает retry (rate_limit/connection). Возможны проблемы с квотами или сетью."
+
+      # ── Анализ еды ────────────────────────────────────────────────────────
+
+      - alert: AnalysisHighErrorRate
+        # outcome="error" — ТОЛЬКО системные сбои (image processor / LLM api|parse /
+        # weight / БД). Семантические вердикты модели (не еда, несколько блюд,
+        # prompt injection) идут как outcome="rejected" и сюда НЕ попадают.
+        # Floor по объёму (>20 анализов за 15m) гасит ложные срабатывания на
+        # микротрафике, где 1 сбой из 3-4 даёт >10%.
+        expr: |
+          sum(rate(fivekcal_analysis_total{outcome="error"}[15m]))
+          /
+          sum(rate(fivekcal_analysis_total[15m])) > 0.10
+          and
+          sum(increase(fivekcal_analysis_total[15m])) > 20
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Более 10% анализов еды завершаются системной ошибкой"
+          description: "Пользователи получают ошибки вместо результата (image processor / LLM / БД), не считая корректных отказов «не еда/несколько блюд». Проверь LLM, image processor, БД."
+
+      - alert: AnalysisLatencyP95High
+        # 95-й перцентиль длительности анализа > 60 секунд за 10 минут
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate(fivekcal_analysis_duration_seconds_bucket[10m])) by (le)
+          ) > 60
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Анализ еды занимает > 60s (p95)"
+          description: "Долгие ответы пользователю. Проверь нагрузку на LLM/image processor."
+
+      - alert: AnalysesStuck
+        # Висящие анализы > 20 одновременно — что-то застряло
+        expr: fivekcal_analyses_active > 20
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Зависло > 20 анализов одновременно"
+          description: "Очередь не разгружается. Проверь LLM, не висит ли pool ProcessPoolExecutor."
+
+      # ── Токены ────────────────────────────────────────────────────────────
+
+      - alert: LLMTokensPerAnalysisHigh
+        # Норма V2 (2 вызова, фото + таблицы в промптах) ~20-40k токенов на анализ.
+        # >80k — раздулись промпты/ретраи или токены жгутся без результата.
+        expr: |
+          sum(increase(fivekcal_llm_tokens_total[3h]))
+          /
+          clamp_min(sum(increase(fivekcal_analysis_total{outcome="ok"}[3h])), 1) > 80000
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Аномальный расход токенов: > 80k на успешный анализ"
+          description: "Средний расход за 3ч сильно выше нормы (~20-40k). Проверь ретраи, размер промптов, зацикливание."
+
+      - alert: LLMTokenSpendSpike
+        # Самомасштабирующийся: часовой расход > 4x среднего часового за предыдущие
+        # сутки И > 100k (floor, чтобы не шуметь на малом трафике). Не завязан на
+        # абсолютные цифры — переживёт рост бота без перекалибровки.
+        expr: |
+          (
+            sum(increase(fivekcal_llm_tokens_total[1h])) > 100000
+          )
+          and
+          (
+            sum(increase(fivekcal_llm_tokens_total[1h]))
+            > 4 * sum(increase(fivekcal_llm_tokens_total[24h] offset 1h)) / 24
+          )
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Всплеск расхода токенов: 4x к среднему за сутки"
+          description: "Часовой расход аномально выше базлайна. Возможен runaway-цикл или абьюз — проверь топ по логам (chat_id) и график токенов."
+
+      # ── Платежи ───────────────────────────────────────────────────────────
+
+      - alert: PaymentInvalidSignature
+        # Любая невалидная подпись — потенциальная атака или смена пароля Robokassa
+        expr: increase(fivekcal_payments_total{outcome="invalid_signature"}[15m]) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: "Robokassa callback с невалидной подписью"
+          description: "Проверь пароль #2 в личном кабинете Robokassa и логи бота. Может быть попытка подделки callback."
+
+      - alert: PaymentAmountMismatch
+        expr: increase(fivekcal_payments_total{outcome="amount_mismatch"}[15m]) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: "Robokassa callback с неверной суммой"
+          description: "Сумма в callback не совпадает с инвойсом. Проверь цены и логи."
+
+  - name: fivekcal-host
+    interval: 30s
+    rules:
+
+      - alert: NodeExporterDown
+        expr: up{job="node"} == 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "node_exporter не отвечает 5+ минут"
+          description: "Метрики сервера (диск/память/CPU) недоступны."
+
+      - alert: HostDiskSpaceLow
+        expr: |
+          min by (mountpoint) (
+            node_filesystem_avail_bytes{fstype!~"tmpfs|ramfs|squashfs|overlay"}
+            / node_filesystem_size_bytes{fstype!~"tmpfs|ramfs|squashfs|overlay"}
+          ) < 0.15
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "На диске осталось < 15% места"
+          description: "Освободи место: docker system prune, старые логи, prometheus retention."
+
+      - alert: HostDiskSpaceCritical
+        expr: |
+          min by (mountpoint) (
+            node_filesystem_avail_bytes{fstype!~"tmpfs|ramfs|squashfs|overlay"}
+            / node_filesystem_size_bytes{fstype!~"tmpfs|ramfs|squashfs|overlay"}
+          ) < 0.05
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "На диске осталось < 5% места"
+          description: "Скоро всё встанет: БД и Prometheus не смогут писать. Чисти немедленно."
+
+      - alert: HostOutOfMemory
+        expr: node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes < 0.10
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Свободной памяти < 10%"
+          description: "Проверь docker stats — кто ест память. Возможен OOM-kill бота."

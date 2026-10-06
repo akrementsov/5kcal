@@ -1,0 +1,23 @@
+# Шаблон конфига Alertmanager. Плейсхолдеры __ALERT_BOT_TOKEN__ / __ALERT_CHAT_ID__
+# подставляются из .env при старте контейнера (см. entrypoint в docker-compose.yml).
+# Используется тот же алерт-бот, что и для WARNING-логов приложения.
+
+route:
+  receiver: telegram
+  group_by: [alertname]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+
+receivers:
+  - name: telegram
+    telegram_configs:
+      - bot_token: "__ALERT_BOT_TOKEN__"
+        chat_id: __ALERT_CHAT_ID__
+        parse_mode: HTML
+        send_resolved: true
+        message: |-
+          {{ range .Alerts }}{{ if eq .Status "firing" }}🔥 <b>{{ .Labels.alertname }}</b> [{{ .Labels.severity }}]
+          {{ .Annotations.summary }}
+          {{ .Annotations.description }}{{ else }}✅ <b>{{ .Labels.alertname }}</b> [{{ .Labels.severity }}] — разрешён{{ end }}
+          {{ end }}

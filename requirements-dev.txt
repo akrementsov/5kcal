@@ -1,0 +1,9 @@
+# Dev-инструменты: не попадают в прод-образ (Dockerfile ставит только requirements.txt).
+# Локально: make install (ставит и prod, и dev).
+-r requirements.txt
+black>=25.1,<26
+ruff>=0.11,<1
+pytest>=8.4,<9
+pytest-asyncio>=1.1,<2
+fakeredis>=2.26,<3
+fluent.syntax>=0.19,<1

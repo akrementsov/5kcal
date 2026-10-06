@@ -1,0 +1,9 @@
+model: gemini-3.5-flash-lite
+# Дефолтный уровень размышления (если scope не совпал ни с одним префиксом ниже)
+thinking_level: high
+# Переопределения по префиксу prompt_cache_scope:
+# идентификация — простая задача, thinking не нужен; измерение веса — нужен high
+thinking_levels:
+  food_identification: low
+  weight_estimation: high
+timeout: 90

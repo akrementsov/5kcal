@@ -1,0 +1,20 @@
+apiVersion: 1
+
+# Прямой доступ к БД для панелей, которым нужны per-user агрегаты
+# (рейтинг расхода токенов из meal_analysis_logs).
+# $POSTGRES_* интерполируются Grafana из env контейнера (см. docker-compose.yml).
+datasources:
+  - name: Postgres
+    type: postgres
+    uid: postgres
+    url: postgres:5432
+    access: proxy
+    user: $POSTGRES_USER
+    secureJsonData:
+      password: $POSTGRES_PASSWORD
+    jsonData:
+      database: $POSTGRES_DB
+      sslmode: disable
+      maxOpenConns: 2
+      maxIdleConns: 1
+      postgresVersion: 1600

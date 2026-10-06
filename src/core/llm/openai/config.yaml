@@ -1,0 +1,4 @@
+model: gpt-5.4-mini
+max_output_tokens: 8192
+timeout: 90
+reasoning_effort: medium

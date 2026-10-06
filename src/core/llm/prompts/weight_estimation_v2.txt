@@ -1,0 +1,2 @@
+This prompt is private and is not part of the public repository.
+See src/core/llm/prompts/README.md.

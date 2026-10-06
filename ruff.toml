@@ -1,0 +1,5 @@
+[lint.per-file-ignores]
+# TZ процесса выставляется (os.environ + tzset) до импорта остальных модулей
+"src/main.py" = ["E402"]
+# matplotlib.use("Agg") и rcParams обязаны идти до импорта pyplot
+"src/features/charts/renderer.py" = ["E402"]
